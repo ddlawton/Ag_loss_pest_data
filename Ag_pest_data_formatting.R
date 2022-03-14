@@ -16,10 +16,10 @@ library(janitor)
 
 names(dat)
 
-State <- colnames(read_excel("data/raw/1979 Values.xlsx"))[[1]]
-Year <- colnames(read_excel("data/raw/1979 Values.xlsx"))[[7]]
+State <- colnames(read_excel("data/raw/1995 Values.xlsx"))[[1]]
+Year <- colnames(read_excel("data/raw/1995 Values.xlsx"))[[7]]
 
-dat <- read_excel("data/raw/1979 Values.xlsx",skip=3) %>%
+dat <- read_excel("data/raw/1995 Values.xlsx",skip=3) %>%
   rowid_to_column(var="id")
 
 table1_end <- (dat %>% filter(Pest == "TOTAL"))$id  

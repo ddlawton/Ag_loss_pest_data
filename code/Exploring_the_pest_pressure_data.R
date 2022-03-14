@@ -5,15 +5,93 @@
 rm(list=ls())
 
 library(tidyverse)
+library(ggridges)
+library(janitor)
 library(mgcv)
 
-dat <- read_csv("data/processed/Pest-damage-dat-refine-edit.csv", 
-                col_types = cols(acres_infested = col_number(),
-                                 percent_acres_infested = col_number(),
-                                 total_acres = col_number())) %>%
-  mutate(pest = factor(pest), region = factor(region))
-summary(dat)
 
+
+names(dat)
+dat <- read_csv("data/processed/CottonLosses_03-12-22_final.csv") %>%
+  clean_names() %>%
+  mutate(across(where(is.character), ~na_if(., ".")),
+         across(acres_infested:loss_cost_acre, ~gsub("\\%", "", .) %>% as.numeric),
+         across(state:pest,  as.factor)) %>%
+  filter(subset_txregions == "no", year >= 1986) %>% droplevels()
+  
+
+dat2 <- dat %>% select(year:acres_treated) %>%
+  mutate(
+    percent_acres_infested = percent_acres_infested * 0.01,
+    total_acres = acres_infested/percent_acres_infested,
+    total_acres = replace("NaN", 0))
+
+
+dat2$total_acres[is.na(dat2$total_acres)] <- 0
+
+summary(dat2)
+
+unique(levels(dat2$state))
+unique(levels(dat2$region))
+unique(levels(dat2$toxin))
+unique(levels(dat2$group))
+unique(levels(dat2$order))
+unique(levels(dat2$pest))
+
+
+# Just some density plots look at how pest groups are divided between the states
+
+dat2 %>% 
+  select(state,group,acres_infested) %>%
+  ggplot(aes(x = acres_infested, y = group)) +
+  geom_density_ridges_gradient() +
+  facet_wrap(~state,scales="free") +
+  scale_x_continuous(limits=c(0,NA))
+
+dat2 %>% 
+  select(state,acres_infested,toxin) %>%
+  ggplot(aes(x = acres_infested, y = toxin)) +
+  geom_density_ridges_gradient() +
+  facet_wrap(~state,scales="free") +
+  scale_x_continuous(limits=c(0,NA))
+
+dat2 %>% 
+  select(group,acres_infested,toxin) %>%
+  ggplot(aes(x = acres_infested, y = toxin)) +
+  geom_density_ridges_gradient() +
+  facet_wrap(~group,scales="free") +
+  scale_x_continuous(limits=c(0,NA))
+
+
+dat2 %>% 
+  select(group,acres_infested,toxin) %>%
+  ggplot(aes(x = acres_infested, y = toxin)) +
+  geom_density_ridges_gradient() +
+  facet_wrap(~group,scales="free") +
+  scale_x_continuous(limits=c(0,NA))
+
+
+
+
+# Now doing some exploratory plotting
+
+dat2 %>%
+  select(state,year,group,acres_infested) %>%
+  ggplot(aes(x=year,y=acres_infested,color=group)) +
+  geom_smooth() +
+  facet_wrap(~state,scales="free") +
+  ggpubr::theme_pubr()
+
+
+dat2 %>%
+  select(toxin,year,state,total_acres) %>%
+  group_by(state,year,toxin) %>%
+  summarize(mean=mean(total_acres)) %>%
+  ggplot(aes(x=(year),y=mean,fill=toxin)) +
+  geom_col()  +
+  geom_vline(xintercept = 1997) +
+  facet_wrap(~state,scales="free") +
+  ggpubr::theme_pubr()
 
 
 dat2 <- dat %>%
