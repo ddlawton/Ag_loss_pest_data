@@ -280,8 +280,8 @@ write.csv(pest_pressure_data2,"data/processed/Pest_damage_dat.csv")
 
 
     
-    sheetcount <- length(excel_sheets("data/raw/2017 Values.xlsx"))
-    x <- "data/raw/2017 Values.xlsx"
+    sheetcount <- length(excel_sheets("data/raw/2010 Values.xlsx"))
+    x <- "data/raw/2010 Values.xlsx"
     dat_list <- list()
     for (i in 1:sheetcount){
       tryCatch({
@@ -289,103 +289,46 @@ write.csv(pest_pressure_data2,"data/processed/Pest_damage_dat.csv")
       Sys.sleep(0.01)
       flush.console()
       
+      State_top1 <- colnames(read_excel(x,sheet=22,.name_repair	="minimal"))[[1]]
+      Year_top <- colnames(read_excel(x,sheet=22,.name_repair	="minimal"))[[7]]
+      sheet_name <- (excel_sheets(x)[22])
       
-      region <- paste0(names(read_excel(x,sheet=i,.name_repair	="minimal"))[1],"_",names(read_excel(x,sheet=i,.name_repair	="minimal"))[2])
-      year <- names(read_excel(x,sheet=i,.name_repair	="minimal"))[7]
-      
-      loop_dat <- read_excel(x,sheet=17,skip=2) %>%
+      dat <- read_excel(x,sheet=22,skip=3) %>%
         rowid_to_column(var="id")
       
-      table1_end <- (loop_dat %>% filter(Pest == "TOTAL" | Pest == "Total"))$id  
+      #table1_end <- (dat %>% filter(Pest == "TOTAL" | Pest == "Total"))$id  
       
-      table2_start <- (loop_dat %>% filter(Pest == "Data Input"))$id  
-      table2_end <- (loop_dat %>% filter(Pest == "% loss to other (chemical injury, weeds, diseases, etc.)"))$id  
+      table2_start <- (dat %>% filter(Pest == "Data Input"))$id  
+      table2_end <- (dat %>% filter(Pest == "% loss to other (chemical injury, weeds, diseases, etc.)"))$id  
       
-      table3_start <- (loop_dat %>% filter(`Acres Treated` == "Yield and Management Results" | `Acres Treated` == "Yield and Magement Results" | `Acres Treated` == "Yield and Ma0gement Results"))$id  
-      table3_end <- (loop_dat %>% filter(`Acres Treated` == "Applications by Ground (acres)"))$id  
+      table3_start <- (dat %>% filter(`Acres Treated` == "Yield and Magement Results" |`Acres Treated` ==  "Yield and Management Results" |`Acres Treated` == "Yield and Ma0gement Results"))$id  
+      table3_end <- (dat %>% filter(`Acres Treated` == "Applications by Ground (acres)"))$id  
       
-      table4_start <- (loop_dat %>% filter(`Cost of 1 insecticide app (including application cost)` == "Economic Results"))$id +1 
-      table4_end <- (loop_dat %>% filter(`Cost of 1 insecticide app (including application cost)` == "Total Losses + Costs"))$id  
-      
-      table5_start <- (loop_dat %>% filter(Pest == "Upland Cotton"))$id
-      table5_end <- (loop_dat %>% filter(Pest == "Total Upland Cotton"))$id  
-      
-      table6_start <- (loop_dat %>% filter(Pest == "Non Upland Cotton"))$id
-      table6_end <- (loop_dat %>% filter(Pest == "Total (all Cotton)"))$id  
-      
-      table7_start <- ((loop_dat %>% filter(`Acres Infested` == "% Acres"))$id)[2]
-      table7_end <- (loop_dat %>% filter(Pest == "No. Acres with No foliar applications"))$id  
+      #table3 <- dat[1:table1_end,] %>%
+      #  drop_na(Pest)  %>%
+      #  select(any_of(c("Pest","Acres Infested","Acres Treated")),starts_with("# of apps")) 
       
       
-      table1 <- loop_dat[1:table1_end,] %>%
-        drop_na(Pest)
-      
-      table2 <- loop_dat[table2_start:table2_end,] %>%
+      table1 <-dat[table2_start:table2_end,] %>%
         drop_na(Pest) %>% select(2:3) %>%
         rename(Information = Pest, data = `Acres Infested`) %>%
-        pivot_wider(names_from = "Information", values_from = "data")
+        pivot_wider(names_from = "Information", values_from = "data") %>%
+        select(any_of(c("State","Region","Year")),starts_with("Total Acres"),starts_with("Yield")) 
       
-      table3 <- loop_dat[table3_start:table3_end,] %>%
+      table2 <-dat[table3_start:table3_end,] %>%
         select(`Acres Treated`,`% Acres Treated`) %>%
         drop_na(`Acres Treated`) %>%
-        pivot_wider(names_from = `Acres Treated`, values_from = `% Acres Treated`)
+        pivot_wider(names_from = `Acres Treated`, values_from = `% Acres Treated`) %>%
+        select(`Total Acres`)
       
-      table4 <- loop_dat[table4_start:table4_end,] %>%
-        select(`Cost of 1 insecticide app (including application cost)`,`% loss /acre infested`, `# of apps/ total acres`) %>%
-        rename(ID = `Cost of 1 insecticide app (including application cost)`,Total = `% loss /acre infested`, Per_Acre = `# of apps/ total acres`) %>%
-        drop_na(ID) %>%
-        pivot_wider(
-          names_from = ID,
-          values_from = c(Total, Per_Acre))
+      dat_list[[i]]  <- cbind(table1,table2) %>%
+        mutate(Sheet_name = sheet_name, Sheet_Year = Year_top, State_top = State_top1) %>% as_tibble()
       
       
-      table5 <- loop_dat[table5_start:table5_end,] %>%
-        row_to_names(1) %>% 
-        clean_names() %>%
-        select(-starts_with("na")) %>%
-        select(-1) %>%
-        drop_na(upland_cotton)
-      
-      table5_long <- table5 %>%
-        mutate(upland_cotton = case_when(
-          upland_cotton == "Organic" ~ "Organic_upland",
-          TRUE ~ upland_cotton
-        )) %>%
-        pivot_wider(
-          names_from = upland_cotton,
-          values_from = c(-upland_cotton))
-      
-      table6 <- loop_dat[table6_start:table6_end,] %>% select(-id)
-      names(table6) <- names(table5)
-      table6 <- table6 %>% 
-        clean_names() %>%
-        mutate(upland_cotton = case_when(
-          upland_cotton == "Organic" ~ "Organic_non_upland",
-          TRUE ~ upland_cotton
-        )) %>%
-        select(-starts_with("na")) %>%
-        pivot_wider(
-          names_from = upland_cotton,
-          values_from = c(-upland_cotton))
-      
-      table7 <- loop_dat[table7_start:table7_end,] %>%
-        row_to_names(1) %>%
-        clean_names() %>%
-        select(-starts_with("na_")) %>%
-        select(-starts_with("x")) %>%
-        pivot_wider(
-          names_from = na,
-          values_from = c(-na))
-      
-      
-      dat_list[[i]] <- cbind(table1,table2,table3) %>% 
-        select(Pest,`Acres Infested`,`% Acres Infested`,`Total Acres`) %>%
-        mutate( region = region,
-                year2 = year) 
       }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
     }
     
-   names(cbind(table1,table2)) 
-which( duplicated( names( cbind(table1,table2,table3,table4,table5_long,table6,table7) ) ) )
-
-cbind(table1,table2,table3,table4,table5_long,table6,table7) %>% select(182,187,192,202,207,212,217)
+    
+test <- bind_rows(dat_list, .id = "column_label")
+test %>% filter(State == "Texas")
+read_excel(x,sheet=22,.name_repair	="minimal")
