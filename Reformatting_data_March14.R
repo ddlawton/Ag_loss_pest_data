@@ -10,41 +10,10 @@ library(tidyverse)
 library(readxl)
 library(janitor)
 library(patchwork)
+library(ggridges)
 
-`%ni%` <- Negate(`%in%`)
 # Functions
-
-
-State <- colnames(read_excel("data/raw/1995 Values.xlsx"))[[1]]
-Year <- colnames(read_excel("data/raw/1995 Values.xlsx"))[[1]]
-sheet_name <- (excel_sheets("data/raw/1995 Values.xlsx")[1])
-
-dat <- read_excel("data/raw/1995 Values.xlsx",skip=3) %>%
-  rowid_to_column(var="id")
-
-
-
-
-table2_start <- (dat %>% filter(Pest == "Data Input"))$id  
-table2_end <- (dat %>% filter(Pest == "% loss to other (chemical injury, weeds, diseases, etc.)"))$id  
-
-table3_start <- (dat %>% filter(`Acres Treated` == "Yield and Magement Results" |`Acres Treated` ==  "Yield and Management Results"))$id  
-table3_end <- (dat %>% filter(`Acres Treated` == "Applications by Ground (acres)"))$id  
-
-table1 <-dat[table2_start:table2_end,] %>%
-  drop_na(Pest) %>% select(2:3) %>%
-  rename(Information = Pest, data = `Acres Infested`) %>%
-  pivot_wider(names_from = "Information", values_from = "data") %>%
-  select(State,Region,Year,'Total Acres (Upland)','Yield / Acre (Upland)') 
-
-table2 <-dat[table3_start:table3_end,] %>%
-  select(`Acres Treated`,`% Acres Treated`) %>%
-  drop_na(`Acres Treated`) %>%
-  pivot_wider(names_from = `Acres Treated`, values_from = `% Acres Treated`) %>%
-  select(`Total Acres`)
-
-test <- cbind(table1,table2) %>%
-  mutate(Sheet_name = sheet_name, Sheet_Year = Year)
+`%ni%` <- Negate(`%in%`)
 
 
 # Lets produce a for loop for the single excel file
@@ -554,7 +523,88 @@ cleaned %>% group_by(state,year) %>%
 
 
 
-filtered_dat4 <- filtered_dat3 %>%
-  mutate(pest = make_clean_names(pest))
+
 
 # Alright this is where I stop. Next I need to clean up the pest names. drop things. etc.
+# I am going to write out the csv and manually enter the pest names as there are a lot
+
+length(unique(filtered_dat3$pest))
+
+pests <- as.data.frame(unique(filtered_dat3$pest))
+
+
+#anders <- read_csv("data/processed/clean_data_March14.csv") %>%
+#  select(group,order,pest) %>% distinct()
+
+
+#write.csv(anders,"data/processed/anders.csv")
+#write.csv(pests,"data/processed/pest_list.csv")
+
+#Alright now that is done, lets clean up the data
+
+pests <- read_csv("data/processed/pest_list.csv") %>%
+  distinct()
+
+
+filtered_dat4 <- filtered_dat3 %>%
+  left_join(pests,by=c("pest" = "old_list")) %>%
+  filter(order != "drop") %>%
+  select(!pest) %>%
+  rename(pest = pest.y, NASS_acres_harvest = Value) %>%
+  drop_na(acres_infested) %>%
+  remove_empty(which = "cols") 
+
+length(unique(filtered_dat4$group))
+unique(filtered_dat4$group)
+
+length(unique(filtered_dat4$order))
+unique(filtered_dat4$order)
+
+length(unique(filtered_dat4$pest))
+unique(filtered_dat4$pest)
+
+summary(filtered_dat4)
+
+
+names(filtered_dat4)
+
+
+
+# pest population data peek
+
+filtered_dat4 %>%
+  group_by(state,group) %>%
+  select(10:13) %>%
+  mutate(acres_infested_log = log1p(acres_infested), acres_treated_log = log1p(acres_treated), number_of_apps_acres_treated_log = log1p(number_of_apps_acres_treated),number_of_apps_total_acres_log = log1p(number_of_apps_total_acres)) %>%
+  pivot_longer(cols=c(3:10),names_to = "variable", values_to = "value") %>%
+  ggplot(aes(x=value,y=group)) +
+  geom_density_ridges(alpha = 0.7) + facet_wrap(~variable,scales="free") +
+  scale_x_continuous(limits=c(0,NA))
+
+# state growing data peek
+
+
+filtered_dat4 %>%
+  group_by(state) %>%
+  select_if(is.numeric) %>%
+  select(!year) %>%
+  mutate(total_acres_upland_log = log1p(total_acres_upland), yield_acre_upland_log = log1p(yield_acre_upland), yield_potential_lb_acre_log = log1p(yield_potential_lb_acre),yield_acre_pima_log = log1p(yield_acre_pima), total_acres_log = log1p(total_acres)) %>%
+  pivot_longer(cols=c(3:7,13:16),names_to = "variable", values_to = "value") %>%
+  ggplot(aes(x=value,y=state)) +
+  geom_density_ridges(alpha = 0.7) + facet_wrap(~variable,scales="free") +
+  scale_x_continuous(limits=c(0,NA))
+
+
+
+
+
+
+
+#everything looks OKAY. not great. as there are still SOME errors. But i think largely I have found most of them without getting to far into the weeds. Lets save this csv and go to modeling.
+
+
+write.csv((filtered_dat4 %>% select(!c(column_label,state_top,sheet_year))),file="data/processed/cleaned_ag_pest_data_March18.csv")
+
+
+
+
