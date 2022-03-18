@@ -598,13 +598,61 @@ filtered_dat4 %>%
 
 
 
-
-
 #everything looks OKAY. not great. as there are still SOME errors. But i think largely I have found most of them without getting to far into the weeds. Lets save this csv and go to modeling.
 
 
 write.csv((filtered_dat4 %>% select(!c(column_label,state_top,sheet_year))),file="data/processed/cleaned_ag_pest_data_March18.csv")
 
 
+#I found some weird numbers in acres infested....fixing now
+
+filtered_dat4 <- read_csv("data/processed/cleaned_ag_pest_data_March18.csv") %>% 
+  mutate(
+    percent_acres_infested = acres_infested/total_acres)
+
+wildly_off_dat <- filtered_dat4 %>% 
+  select(state,year,percent_acres_infested) %>%
+  filter(percent_acres_infested > 1.1)
+
+filtered_dat4 %>% filter(state == "California",year==1992,percent_acres_infested > 1.1) #obvious data entry error
+filtered_dat4 %>% filter(state == "South Carolina",year==2002,percent_acres_infested > 1.1) #Lets just round this down to 1
+filtered_dat4 %>% filter(state == "Florida",year==2009,percent_acres_infested > 1.1) # Lets just round this down to 1
+filtered_dat4 %>% filter(state == "Kansas",year==2007,percent_acres_infested > 1.1) #  issues from NASS. probably remove
+filtered_dat4 %>% filter(state == "Alabama",year==1995,percent_acres_infested > 1.1) # Lets just round this down to 1
+filtered_dat4 %>% filter(state == "Alabama",year==2005,percent_acres_infested > 1.1) # Okay so area infested is state wide level thing. Lets just sum it up to that
+filtered_dat4 %>% filter(state == "Texas",year==2001,percent_acres_infested > 1.1) #unsure about this one. probably just remove
+
+
+group_by(state) %>%
+  select(1,3:8,total_acres) %>%
+  select(!...1) %>%
+  distinct() %>%
+  summarize(sium = sum(total_acres))
+
+
+filtered_dat5 <- filtered_dat4 %>% mutate(
+    acres_infested = case_when(
+    state == "California" & year==1992 & percent_acres_infested > 1.1 ~ acres_treated,
+    state == "Florida" & year==2009 & percent_acres_infested > 1.1 ~ total_acres,
+    state == "Texas" & year==2001 & percent_acres_infested > 1.1 ~ total_acres,
+    state == "South Carolina" & year==2002 & percent_acres_infested > 1.1 ~ 200000,
+    state == "Alabama" & year==1995 & percent_acres_infested > 1.1 ~ 260000,
+    state == "Alabama" & year==2005 & percent_acres_infested > 1.1 ~ acres_infested* .1,
+    TRUE ~ acres_infested)) %>%
+    filter(!(state == "Kansas" & year == 2007 & percent_acres_infested > 1.1)) %>%
+    mutate(percent_acres_infested = acres_infested/total_acres,
+           total_acres = case_when(
+             percent_acres_infested > 1 ~ acres_infested,
+             TRUE ~ total_acres
+           ),
+           percent_acres_infested = acres_infested/total_acres)
+  
+
+filtered_dat5 %>% filter(percent_acres_infested > 1)
+summary(filtered_dat5)
+
+#okay I made some maybe controversial changes here. Ultimately there wasnt much data that was wrong here. Which is a good sign. 
+
+write.csv((filtered_dat5),file="data/processed/cleaned_ag_pest_data_March18.csv")
 
 
