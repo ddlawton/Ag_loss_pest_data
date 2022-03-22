@@ -9,8 +9,9 @@ library(ggridges)
 library(janitor)
 library(mgcv)
 library(DHARMa)
-
-
+library(glmmTMB)
+library(emmeans)
+library(MetBrewer)
 
 names(dat)
 dat <- read_csv("data/processed/cleaned_ag_pest_data_March18.csv") %>%
@@ -132,57 +133,88 @@ dat %>%
   ggpubr::theme_pubr() +
   ylab("Acres infested") + 
   xlab("Year")
+
+
+#Okay lets do some model selection
+
+mod0 <- gam(acres_infested   ~ 1,
+           family=tw(), data=dat)
+
+mod1 <- bam(acres_infested   ~ te(year,group,bs=c("tp","re"),m=2,k=20),
+            select=TRUE,family=tw(), data=dat,discrete = TRUE,nthreads = 23)
+
+mod2 <- bam(acres_infested   ~ te(year,group,bs=c("tp","re"),m=2,k=20) +
+              s(region,state,bs="re"),
+            select=TRUE,family=tw(), data=dat,discrete = TRUE,nthreads = 23)
+
+mod3 <- bam(acres_infested   ~ te(year,group,bs=c("tp","re"),m=2,k=20) +
+              s(region,state,bs="re") + 
+              s(total_acres,k=25),
+            select=TRUE,family=tw(), data=dat,discrete = TRUE,nthreads = 23)
+
+mod3.5 <- bam(acres_infested   ~ te(year,group,bs=c("tp","re"),m=2,k=20) +
+              s(region,bs="re") + 
+              s(total_acres,k=25),
+            select=TRUE,family=tw(), data=dat,discrete = TRUE,nthreads = 23)
+mod3.75 <- bam(acres_infested   ~ te(year,group,bs=c("tp","re"),m=2,k=20) +
+                s(state,bs="re") + 
+                s(total_acres,k=25),
+              select=TRUE,family=tw(), data=dat,discrete = TRUE,nthreads = 23)
+
   
 mod <- bam(acres_infested   ~
-             #te(year,group,bs="fs",m=2,k=20) +
-             te(year,state,group,bs=c("tp","re","re"),m=2,k=20) +
+             te(year,group,bs=c("tp","re"),m=2,k=20) +
              s(region,state,bs="re") + 
-             s(group,bs="re") +
              s(total_acres,k=25),
            select=TRUE,family=tw(), data=dat,discrete = TRUE,nthreads = 23)
 
-aov_mod <- aov(percent_adj~BT_group,data=dat)
-summary(aov_mod)
-TukeyHSD(aov_mod)
 
-
-mod_by <- bam(percent_adj  ~
+mod_by <- bam(acres_infested  ~
              te(year,by=group,bs="tp",k=20) +
              s(region,state,bs="re") + 
-             s(group,bs="re") +
              s(total_acres,k=25),
-           select=TRUE,family=betar(),data=dat,discrete = TRUE,nthreads = 23)
+           select=TRUE,family=tw(),data=dat,discrete = TRUE,nthreads = 23)
 
 
-mod_by <- bam(acres_infested ~ te(year,by=group,bs="tp",m=2,k=20)  + s(state,bs="re") + s(total_acres,k=20),select=TRUE,family=scat(),
-              data=dat,discrete = TRUE,nthreads = 8)
+AIC(mod0,mod1,mod2,mod3,mod3.5,mod3.75,mod_by) %>%
+  mutate(deltaAIC = AIC - min(AIC)) %>%
+  arrange(deltaAIC)
 
-AIC(mod,mod_by)
+BIC(mod0,mod1,mod2,mod3,mod3.5,mod3.75,mod_by)  %>%
+  mutate(deltaBIC = BIC - min(BIC)) %>%
+  arrange(deltaBIC)
 
-test <- gratia::smooth_estimates(mod,type="link")
-
-summary(mod)
-k.check(mod)
-sim_resid <- simulateResiduals(mod_by)
+summary(mod3)
+k.check(mod3)
+sim_resid <- simulateResiduals(mod3)
 plot(sim_resid)
 
 
-output <- gratia::smooth_estimates(mod)
 
-b0 <- coef((mod))[1]
+b0 <- coef((mod3))[1]
 
-test <- gratia::smooth_estimates((mod))
+test <- gratia::smooth_estimates((mod3))
 
 test$adj_est <- test$est 
 
+MetBrewer::colorblind_palettes
+
 group_year <- test %>%
-  filter(smooth == "te(year,state,group)") %>%
+  filter(smooth == "te(year,group)") %>%
   ggplot(aes(x=year,group=group)) + geom_ribbon(aes(ymin=adj_est-se, ymax=adj_est+se,fill=group),alpha=.1) +
-  geom_line(aes(y = adj_est, color=group),size=1.5) + ggpubr::theme_pubr() +
-  scale_color_manual(values = c("#58b5e1", "#b11478", "#9bea30", "#4224bf", "#749d3c", "#fa7ee3", "#19a71f", "#e313ee", "#09f54c")) +
-  scale_fill_manual(values = c("#58b5e1", "#b11478", "#9bea30", "#4224bf", "#749d3c", "#fa7ee3", "#19a71f", "#e313ee", "#09f54c")) + 
-  ggtitle("Pest Pressure through the years") + xlab("Year") + ylab("Area Infested (%)") + 
-  facet_wrap(state~group,scales="free") 
+  geom_line(aes(y = adj_est, color=group),size=4) + ggpubr::theme_pubr() +
+  #scale_color_manual(values = c("#58b5e1", "#b11478", "#9bea30", "#4224bf", "#749d3c", "#fa7ee3", "#19a71f", "#e313ee", "#09f54c")) +
+  #scale_fill_manual(values = c("#58b5e1", "#b11478", "#9bea30", "#4224bf", "#749d3c", "#fa7ee3", "#19a71f", "#e313ee", "#09f54c")) + 
+  ggtitle("Pest Pressure through the years") + xlab("Year") + ylab("Acres Infested") + 
+  geom_vline(xintercept = 1996) +
+  geom_vline(xintercept = 2006) +
+  scale_color_met_d(name = "Paquin") +
+  scale_fill_met_d(name = "Paquin") +  
+  #scale_x_continuous(breaks = c(1986,1991,1996,2001,2006,2011,2016,2021)) +
+  facet_wrap(~group,scales="free")  + theme(legend.position="none") +
+  theme(text = element_text(size=20))
+
+group_year
 
 total_acres <- test %>%
   filter(smooth == "s(total_acres)") %>%
@@ -191,9 +223,46 @@ total_acres <- test %>%
   ggtitle("acres infested x total acres") + xlab("total acres") + ylab("Estimate")
 
 
-mod_trt <- test %>% filter(smooth == "te(MOD,Trt)") %>%
-  ggplot(aes(x=(MOD/60),group=Trt)) + geom_ribbon(aes(ymin=adj_est-se, ymax=adj_est+se,fill=Trt),alpha=.1) +
-  geom_line(aes(y = adj_est, color=Trt)) + theme_pubr()  +
-  scale_color_manual(values = c("#1b9e77","#d95f02"))+
-  scale_fill_manual(values = c("#1b9e77","#d95f02")) + ggtitle("Minute of day by treatment smooth") + xlab("Hour of Day") +
-  xlim(0,24)
+#Now lets just do a glmm to show differences between group and BT era
+
+glmm_dat <- dat %>% select(acres_infested,total_acres,group,toxin,BT_group,state,region,acres_infested_int) %>% drop_na() %>%
+  mutate(group = gsub(" ", "_", group),
+    bt_group2 = paste0(toxin,".",group))
+summary(glmm_dat)
+
+glmm <- glmmTMB(acres_infested ~ bt_group2 + total_acres,data=glmm_dat,
+                control = glmmTMBControl(parallel = 23))
+
+summary(glmm)
+simresid <- simulateResiduals(glmm)
+plot(simresid)
+
+
+em <- multcomp::cld(emmeans(glmm, ~ bt_group2)) %>% as.data.frame()
+
+?separate
+em <- em %>% separate(bt_group2,c("toxin","group"),sep="\\.")
+
+flevels <- c("pre_BT", "Transition", "BT_era")
+
+
+MetBrewer::colorblind_palettes
+MetBrewer::scale_color_met_d()
+
+
+options(scipen = 999)
+emmeans <- em %>%
+  select(1:4) %>%
+  mutate(lower = emmean - SE, upper = emmean + SE,
+         toxin = factor(toxin,levels=flevels)) %>%
+  ggplot(aes(x=toxin,y=emmean,color=toxin)) + 
+  geom_point(position=position_dodge(width = 0.9),size=8) +
+  scale_y_continuous() +
+  scale_color_met_d(name = "Demuth") + 
+  geom_errorbar(aes(ymin = lower, ymax = upper),position=position_dodge(width = 0.9),width=0,size=1.5) +
+  ggpubr::theme_pubr() + #theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=0.5))
+  facet_wrap(~group,scales="free") + theme(legend.position="none") +
+  theme(text = element_text(size=20)) + xlab("") + ylab("Estimated marginal means")
+
+ggsave(group_year,file='output/pest_pressure_years.png', dpi=300,width=15,height=15)
+ggsave(emmeans,file='output/pest_emmeans.png', dpi=300,width=15,height=15)
